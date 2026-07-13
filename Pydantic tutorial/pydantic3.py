@@ -11,7 +11,7 @@
 #   6. Special Pydantic types (EmailStr — built-in smart validators)
 # ============================================================
 
-from pydantic import BaseModel, ValidationError, field_validator, EmailStr
+from pydantic import BaseModel, ValidationError, field_validator, EmailStr, AnyUrl
 from typing import List, Dict, Optional
 
 
@@ -320,6 +320,83 @@ print()
 
 
 # ============================================================
+# STEP 6b: AnyUrl  —  Validating Web Links / URLs
+# ============================================================
+# Just like EmailStr validates email format,
+# AnyUrl validates that a field contains a proper URL.
+#
+# AnyUrl checks two things:
+#   1. Does it have a SCHEME?  (http://, https://, ftp://, etc.)
+#   2. Does it have a HOST?    (google.com, api.myapp.com, etc.)
+#
+# Examples:
+#   'https://google.com'             -> VALID
+#   'http://localhost:8000'          -> VALID  (useful in dev)
+#   'https://linkedin.com/in/nitish' -> VALID
+#   'linkedin.com/in/nitish'         -> INVALID  (no scheme!)
+#   'not-a-url'                      -> INVALID  (no scheme, no host)
+#
+# Usage: declare the field as AnyUrl  —  that's it.
+# No @field_validator, no regex, no custom logic needed.
+#
+# Real FastAPI use-cases:
+#   - User profile / website links
+#   - LinkedIn / social media URLs
+#   - Webhook callback endpoints
+# ============================================================
+
+
+class PatientV6(BaseModel):
+    name: str
+    email: EmailStr         # validates email format   (from STEP 6 above)
+    linkedin_url: AnyUrl    # validates URL format     (new in STEP 6b)
+    age: int
+
+
+print("=== STEP 6b: AnyUrl ===")
+
+# --- Valid URL ---
+try:
+    p = PatientV6(
+        name='Nitish',
+        email='nitish@example.com',
+        linkedin_url='https://linkedin.com/in/nitish',
+        age=35
+    )
+    print("Valid patient ->")
+    print("  name        :", p.name)
+    print("  email       :", p.email)
+    print("  linkedin    :", p.linkedin_url)
+except ValidationError as e:
+    print(e)
+
+# --- Invalid: domain only, no 'https://' scheme ---
+try:
+    p = PatientV6(
+        name='Nitish',
+        email='nitish@example.com',
+        linkedin_url='linkedin.com/in/nitish',   # missing 'https://'
+        age=35
+    )
+except ValidationError as e:
+    print(f"\nBad URL 'linkedin.com/in/nitish' -> {e.errors()[0]['msg']}")
+    # Pydantic catches: URL scheme (http, https, etc.) is missing
+
+# --- Invalid: total nonsense string ---
+try:
+    p = PatientV6(
+        name='Nitish',
+        email='nitish@example.com',
+        linkedin_url='not-a-url',     # no scheme, no host at all
+        age=35
+    )
+except ValidationError as e:
+    print(f"Bad URL 'not-a-url'              -> {e.errors()[0]['msg']}")
+
+print()
+
+
+# ============================================================
 # SUMMARY — What we covered in pydantic3.py
 # ============================================================
 #
@@ -337,7 +414,8 @@ print()
 # [OK] Field validators     : @field_validator for custom rules
 # [OK] Model methods        : model_dump, model_dump_json, model_copy
 # [OK] Nested models        : Address inside Patient
-# [OK] Special types        : EmailStr validates email format automatically
+# [OK] Special types        : EmailStr  -> email format validation
+#                           : AnyUrl    -> URL / link format validation
 #
 # Next up -> pydantic4.py: model_config, strict mode,
 #            computed fields, and model_validator (multi-field rules)
