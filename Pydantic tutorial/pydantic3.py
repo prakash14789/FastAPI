@@ -8,9 +8,10 @@
 #   3. Field validators    (custom rules beyond just "is it an int?")
 #   4. Model methods       (model_dump, model_json_schema, etc.)
 #   5. Nested models       (a model inside another model)
+#   6. Special Pydantic types (EmailStr — built-in smart validators)
 # ============================================================
 
-from pydantic import BaseModel, ValidationError, field_validator
+from pydantic import BaseModel, ValidationError, field_validator, EmailStr
 from typing import List, Dict, Optional
 
 
@@ -78,7 +79,7 @@ class PatientV2(BaseModel):
     age: int                            # REQUIRED — no default
     weight: float                       # REQUIRED — no default
     married: bool = False               # OPTIONAL — defaults to False
-    allergies: List[str] = []           # OPTIONAL — defaults to empty list
+    allergies: List[str] = []           # OPTIONAL — defaults to empty list        // yaha agar sirf list krte list ke andar string lena ha ya int wo define nahi kr pate isiliye List[str]
     email: Optional[str] = None         # OPTIONAL — defaults to None
 
 
@@ -246,14 +247,98 @@ print()
 
 
 # ============================================================
+# STEP 6: Special Pydantic Types — Built-in Smart Validators
+# ============================================================
+# So far we wrote OUR OWN validators using @field_validator.
+# But Pydantic ships with READY-MADE smart types that already
+# know how to validate common real-world data.
+#
+# The most useful ones:
+#
+#   EmailStr    -> validates that a string is a proper email address
+#                  e.g.  'user@example.com'  is VALID
+#                  e.g.  'notanemail'         raises ValidationError
+#                  e.g.  'user@'              raises ValidationError (no domain)
+#
+#   HttpUrl     -> validates a proper URL (must start with http/https)
+#                  e.g.  'https://google.com'  VALID
+#                  e.g.  'google'              raises ValidationError
+#
+#   PositiveInt -> int that MUST be > 0, no @field_validator needed!
+#
+#   constr(...) -> constrained string: min/max length, regex pattern, etc.
+#
+# Why use these instead of writing your own @field_validator?
+#   1. Less code — no boilerplate
+#   2. Battle-tested logic by the Pydantic team
+#   3. They show up correctly in the auto-generated JSON schema
+#      (FastAPI uses this schema to build Swagger API docs)
+#
+# IMPORTANT: EmailStr needs an extra package to work.
+#   Run this in your terminal first:
+#       pip install pydantic[email]
+#   Without it you will get an ImportError.
+# ============================================================
+
+
+class PatientV5(BaseModel):
+    name: str
+    email: EmailStr     # <-- EmailStr instead of plain str
+                        # Pydantic will now automatically check:
+                        #   - is there an '@' symbol?
+                        #   - is there a domain name after '@'?
+                        #   - does the domain have a valid TLD?
+                        # You write ZERO extra code — EmailStr does it all.
+    age: int
+
+
+print("=== STEP 6: Special Pydantic Types (EmailStr) ===")
+
+# --- Valid email ---
+try:
+    p = PatientV5(name='Nitish', email='nitish@example.com', age=35)
+    print("Valid   ->", p)
+    # email stored as-is after passing validation
+except ValidationError as e:
+    print(e)
+
+# --- Invalid: no '@' at all ---
+try:
+    p = PatientV5(name='Nitish', email='notanemail', age=35)
+    # 'notanemail' has no '@' or domain — clearly not an email
+except ValidationError as e:
+    print(f"Bad email 'notanemail'    -> {e.errors()[0]['msg']}")
+
+# --- Invalid: '@' present but no domain after it ---
+try:
+    p = PatientV5(name='Nitish', email='nitish@', age=35)
+    # '@' is there but nothing after it — still not valid
+except ValidationError as e:
+    print(f"Bad email 'nitish@'       -> {e.errors()[0]['msg']}")
+
+print()
+
+
+# ============================================================
 # SUMMARY — What we covered in pydantic3.py
 # ============================================================
-# ✅ Richer field types   : float, bool, List[str], Dict[str,str]
-# ✅ Optional & defaults  : Optional[str] = None,  List[str] = []
-# ✅ Field validators     : @field_validator for custom rules
-# ✅ Model methods        : model_dump, model_dump_json, model_copy
-# ✅ Nested models        : Address inside Patient
 #
-# Next up → pydantic4.py: model_config, strict mode,
-#           computed fields, and model_validator (multi-field rules)
+# IMPORTANT NOTE on List[str]  (user's own observation):
+# -------------------------------------------------------
+# Agar hum sirf  List  likhte (bina [str] ke), toh Python ko
+# pata nahi ki list ke andar kya hoga — int? str? kuch bhi?
+# List[str]  likhne se Pydantic guarantee karta hai ki list mein
+# SIRF strings honge, koi int ya koi aur type nahi.
+# Yahi reason hai hum  List[str]  likhte hain, not just  List.
+#
+# Checkboxes:
+# [OK] Richer field types   : float, bool, List[str], Dict[str,str]
+# [OK] Optional & defaults  : Optional[str] = None,  List[str] = []
+# [OK] Field validators     : @field_validator for custom rules
+# [OK] Model methods        : model_dump, model_dump_json, model_copy
+# [OK] Nested models        : Address inside Patient
+# [OK] Special types        : EmailStr validates email format automatically
+#
+# Next up -> pydantic4.py: model_config, strict mode,
+#            computed fields, and model_validator (multi-field rules)
 # ============================================================
