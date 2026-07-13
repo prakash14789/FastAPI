@@ -8,10 +8,11 @@
 #   3. Field validators    (custom rules beyond just "is it an int?")
 #   4. Model methods       (model_dump, model_json_schema, etc.)
 #   5. Nested models       (a model inside another model)
-#   6. Special Pydantic types (EmailStr — built-in smart validators)
+#   6. Special Pydantic types (EmailStr, AnyUrl — built-in smart validators)
+#   7. Field()  — add constraints like max_length, gt, lt directly in model
 # ============================================================
 
-from pydantic import BaseModel, ValidationError, field_validator, EmailStr, AnyUrl
+from pydantic import BaseModel, ValidationError, field_validator, EmailStr, AnyUrl, Field
 from typing import List, Dict, Optional
 
 
@@ -397,6 +398,158 @@ print()
 
 
 # ============================================================
+# STEP 7: Field()  —  Adding Constraints Directly in the Model
+# ============================================================
+# So far, to add custom rules (e.g. age > 0), we used @field_validator.
+# But for SIMPLE, COMMON constraints Pydantic gives us a shortcut: Field()
+#
+# Field() lets you define rules INLINE — right where you declare the field.
+# No separate function, no decorator, no boilerplate.
+#
+# Most-used Field() parameters:
+#
+#   max_length=N    -> string (or list) can have at most N characters/items
+#   min_length=N    -> string (or list) must have at least N characters/items
+#   gt=N            -> number must be Greater Than N          (gt = greater than)
+#   lt=N            -> number must be Less Than N             (lt = less than)
+#   ge=N            -> number must be Greater than or Equal N (ge = >=)
+#   le=N            -> number must be Less than or Equal N    (le = <=)
+#   default=...     -> default value if the field is not provided
+#   description=... -> human-readable note shown in API docs (Swagger)
+#
+# When to use Field() vs @field_validator?
+#   Use Field()          for simple, single-field numeric/string limits
+#   Use @field_validator  for complex logic (e.g. checking two fields together,
+#                         calling an external service, applying regex, etc.)
+# ============================================================
+
+
+class PatientV7(BaseModel):
+    # name: str   PLUS   max_length=50
+    # -> name cannot be longer than 50 characters
+    # -> if someone passes a 51-char name, Pydantic raises ValidationError
+    name: str = Field(max_length=50)
+
+    # email and linkedin are already smart types — no Field() needed here
+    email: EmailStr
+    linkedin_url: AnyUrl
+
+    # age: int   PLUS   gt=0, lt=120
+    # -> age must be > 0  (gt = greater than 0, so 0 itself is NOT allowed)
+    # -> age must be < 120 (lt = less than 120, so 120 itself is NOT allowed)
+    # This replaces the @field_validator we wrote in STEP 3 — same result, less code!
+    age: int = Field(gt=0, lt=120)
+
+    # weight: float   PLUS   gt=0
+    # -> weight must be a positive float (cannot be 0 or negative)
+    weight: float = Field(gt=0)
+
+    # married has a plain default — no Field() needed, just = False
+    married: bool = False
+
+    # allergies: Optional[List[str]]   PLUS   max_length=5
+    # -> the list itself can have at most 5 items
+    # -> Optional means it can also be None (patient might have no allergies)
+    # -> default=None means it is not required when creating a patient
+    allergies: Optional[List[str]] = Field(default=None, max_length=5)
+
+    # contact_details is a plain Dict — no extra constraints needed
+    contact_details: Dict[str, str]
+
+
+print("=== STEP 7: Field() Constraints ===")
+
+# --- Valid: all constraints satisfied ---
+try:
+    p = PatientV7(
+        name='Nitish',
+        email='nitish@example.com',
+        linkedin_url='https://linkedin.com/in/nitish',
+        age=35,
+        weight=72.5,
+        allergies=['pollen', 'dust'],
+        contact_details={'phone': '9999999999'}
+    )
+    print("Valid patient ->")
+    print("  name      :", p.name)
+    print("  age       :", p.age)
+    print("  weight    :", p.weight)
+    print("  allergies :", p.allergies)
+except ValidationError as e:
+    print(e)
+
+# --- Invalid: name too long (> 50 chars) ---
+try:
+    p = PatientV7(
+        name='A' * 51,          # 51 characters — exceeds max_length=50
+        email='nitish@example.com',
+        linkedin_url='https://linkedin.com/in/nitish',
+        age=35,
+        weight=72.5,
+        contact_details={'phone': '9999999999'}
+    )
+except ValidationError as e:
+    print(f"\nName too long     -> {e.errors()[0]['msg']}")
+
+# --- Invalid: age = 0  (gt=0 means strictly greater than 0) ---
+try:
+    p = PatientV7(
+        name='Nitish',
+        email='nitish@example.com',
+        linkedin_url='https://linkedin.com/in/nitish',
+        age=0,                  # 0 is NOT > 0
+        weight=72.5,
+        contact_details={'phone': '9999999999'}
+    )
+except ValidationError as e:
+    print(f"Age = 0 (gt=0)    -> {e.errors()[0]['msg']}")
+
+# --- Invalid: age = 120  (lt=120 means strictly less than 120) ---
+try:
+    p = PatientV7(
+        name='Nitish',
+        email='nitish@example.com',
+        linkedin_url='https://linkedin.com/in/nitish',
+        age=120,                # 120 is NOT < 120
+        weight=72.5,
+        contact_details={'phone': '9999999999'}
+    )
+except ValidationError as e:
+    print(f"Age = 120 (lt=120) -> {e.errors()[0]['msg']}")
+
+# --- Invalid: too many allergies (> 5 items in the list) ---
+try:
+    p = PatientV7(
+        name='Nitish',
+        email='nitish@example.com',
+        linkedin_url='https://linkedin.com/in/nitish',
+        age=35,
+        weight=72.5,
+        allergies=['a', 'b', 'c', 'd', 'e', 'f'],  # 6 items — exceeds max_length=5
+        contact_details={'phone': '9999999999'}
+    )
+except ValidationError as e:
+    print(f"Too many allergies -> {e.errors()[0]['msg']}")
+
+# --- Optional field: no allergies passed at all -> defaults to None ---
+try:
+    p = PatientV7(
+        name='Nitish',
+        email='nitish@example.com',
+        linkedin_url='https://linkedin.com/in/nitish',
+        age=35,
+        weight=72.5,
+        contact_details={'phone': '9999999999'}
+        # allergies not passed -> defaults to None (Optional + default=None)
+    )
+    print(f"\nNo allergies passed -> allergies = {p.allergies}")
+except ValidationError as e:
+    print(e)
+
+print()
+
+
+# ============================================================
 # SUMMARY — What we covered in pydantic3.py
 # ============================================================
 #
@@ -414,8 +567,9 @@ print()
 # [OK] Field validators     : @field_validator for custom rules
 # [OK] Model methods        : model_dump, model_dump_json, model_copy
 # [OK] Nested models        : Address inside Patient
-# [OK] Special types        : EmailStr  -> email format validation
-#                           : AnyUrl    -> URL / link format validation
+# [OK] Special types        : EmailStr -> email, AnyUrl -> URL validation
+# [OK] Field() constraints  : max_length, gt, lt — inline rules without
+#                             writing a separate @field_validator
 #
 # Next up -> pydantic4.py: model_config, strict mode,
 #            computed fields, and model_validator (multi-field rules)
