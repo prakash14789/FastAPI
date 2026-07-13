@@ -13,7 +13,7 @@
 #   9. Annotated + metadata - title, description, examples for API docs
 # ============================================================
 
-from pydantic import BaseModel, ValidationError, field_validator, EmailStr, AnyUrl, Field
+from pydantic import BaseModel, ValidationError, field_validator, EmailStr, AnyUrl, Field, model_validator
 from typing import List, Dict, Optional, Annotated
 
 
@@ -349,15 +349,86 @@ print()
 
 
 # ============================================================
+# STEP 10: model_validator  (mode='after')
+# ============================================================
+# @field_validator validates ONE field at a time.
+# But sometimes a rule involves MULTIPLE fields together.
+#
+# Example from the image:
+#   "If age > 60, then contact_details must have an 'emergency' key."
+#   You CAN'T check this with @field_validator('age') alone
+#   because you also need to read contact_details at the same time.
+#
+# @model_validator solves this — it runs AFTER all fields are validated
+# and gives you access to the ENTIRE model object ('model').
+#
+# mode='after':
+#   All fields are already validated and set on the model.
+#   'model' is the fully constructed Pydantic object.
+#   Access fields as  model.age,  model.contact_details,  etc.
+#   Return the model to accept, raise ValueError to reject.
+#
+# mode='before' also exists (for model_validator):
+#   Receives raw dict before any field validation.
+#   Less common — use only when you need to pre-process raw input.
+#
+# WHERE TO USE model_validator:
+#   - Cross-field rules  (field A depends on field B)
+#   - Conditional requirements  (if X then Y must exist)
+#   - Rules that make no sense on a single field alone
+# ============================================================
+
+class PatientV9(BaseModel):
+    name: str
+    age: int
+    contact_details: Dict[str, str]
+
+    # model_validator mode='after' -> instance method (no @classmethod needed)
+    # 'self' is the fully built PatientV9 object — access fields directly
+    @model_validator(mode='after')
+    def validate_emergency_contact(self):
+        # Rule: patients older than 60 MUST have an 'emergency' key in contact_details
+        if self.age > 60 and 'emergency' not in self.contact_details:
+            raise ValueError('Patients older than 60 must have an emergency contact')
+        return self   # always return self if valid
+
+
+print("=== STEP 10: model_validator mode='after' ===")
+
+# Valid: age=35, no emergency needed
+try:
+    p = PatientV9(name='Nitish', age=35, contact_details={'phone': '9999'})
+    print("age=35, no emergency ->  OK:", p.name, p.age)
+except ValidationError as e:
+    print(e)
+
+# Valid: age=65 WITH emergency contact
+try:
+    p = PatientV9(name='Nitish', age=65,
+                  contact_details={'phone': '9999', 'emergency': '8888'})
+    print("age=65, with emergency-> OK:", p.name, p.age)
+except ValidationError as e:
+    print(e)
+
+# Invalid: age=65 but NO emergency contact
+try:
+    p = PatientV9(name='Nitish', age=65, contact_details={'phone': '9999'})
+except ValidationError as e:
+    print("age=65, no emergency  -> ERROR:", e.errors()[0]['msg'])
+print()
+
+
+# ============================================================
 # SUMMARY
 # ============================================================
-# [1] Richer types     : float, bool, List[str], Dict[str,str]
-# [2] Optional+default : Optional[str]=None, List[str]=[]
-# [3] field_validator  : mode='after' (default) — value already typed
-# [4] field_validator  : mode='before' — value is raw, runs first
-# [5] Model methods    : model_dump, model_dump_json, model_copy
-# [6] Nested models    : Address inside Patient — both validated
-# [7] Special types    : EmailStr, AnyUrl — zero boilerplate
-# [8] Field()          : max_length, gt, lt — inline constraints
-# [9] Annotated        : title, description, examples — API docs
+# [1]  Richer types      : float, bool, List[str], Dict[str,str]
+# [2]  Optional+default  : Optional[str]=None, List[str]=[]
+# [3]  field_validator   : mode='after' (default) — value already typed
+# [4]  field_validator   : mode='before' — value is raw, runs first
+# [5]  Model methods     : model_dump, model_dump_json, model_copy
+# [6]  Nested models     : Address inside Patient — both validated
+# [7]  Special types     : EmailStr, AnyUrl — zero boilerplate
+# [8]  Field()           : max_length, gt, lt — inline constraints
+# [9]  Annotated         : title, description, examples — API docs
+# [10] model_validator   : cross-field rules — access ALL fields at once
 # ============================================================
