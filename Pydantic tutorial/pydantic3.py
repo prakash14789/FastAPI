@@ -11,6 +11,7 @@
 #   6. Special Pydantic types (EmailStr, AnyUrl — built-in smart validators)
 #   7. Field()  — add constraints like max_length, gt, lt directly in model
 #   8. Annotated + Field metadata  — title, description, examples for API docs
+#   9. @field_validator mode='before' vs mode='after'
 # ============================================================
 
 from pydantic import BaseModel, ValidationError, field_validator, EmailStr, AnyUrl, Field
@@ -727,6 +728,86 @@ print()
 
 
 # ============================================================
+# STEP 9: @field_validator  mode='before'
+# ============================================================
+# We already used @field_validator in STEP 3 — but without 'mode'.
+# When no mode is set, the DEFAULT is  mode='after'.
+#
+# mode='after'  (default, what we used in STEP 3):
+#   Pydantic converts the raw input to the declared type FIRST,
+#   THEN calls your validator.  'value' is already an int / str / etc.
+#
+# mode='before':
+#   Your function runs FIRST on the RAW input, BEFORE Pydantic does
+#   any type conversion.  Good for cleaning / transforming messy input.
+#
+# In the image:
+#   @field_validator('age', mode='before')
+#   def validate_age(cls, value):
+#       if 0 < value < 100:
+#           return value
+#       else:
+#           raise ValueError('Age should be in between 0 and 100')
+# ============================================================
+
+class PatientV9(BaseModel):
+    name: str
+    age: int
+
+    # mode='before' -> this runs BEFORE Pydantic converts value to int
+    # so 'value' here is the RAW input — could be str, float, or int
+    @field_validator('age', mode='before')
+    @classmethod
+    def validate_age(cls, value):
+        if 0 < value < 100:
+            return value   # valid — return as-is, Pydantic will cast to int
+        else:
+            raise ValueError('Age should be in between 0 and 100')
+
+    # ----------------------------------------------------------
+    # COMPARISON — this is what mode='after' (default) looks like:
+    # (commented out so you can see the difference side by side)
+    #
+    # @field_validator('age')          <- no mode = mode='after'
+    # @classmethod
+    # def validate_age(cls, value):
+    #     # 'value' is ALREADY an int here — Pydantic converted it first
+    #     if 0 < value < 100:
+    #         return value
+    #     else:
+    #         raise ValueError('Age should be in between 0 and 100')
+    #
+    # KEY RULE:
+    #   mode='before' -> your code sees the raw value first  (str/float/int)
+    #   mode='after'  -> your code sees the already-typed value (int)
+    # ----------------------------------------------------------
+
+
+print("=== STEP 9: field_validator mode='before' ===")
+
+# valid age
+try:
+    p = PatientV9(name='Nitish', age=35)
+    print("Valid  ->", p)
+except ValidationError as e:
+    print(e)
+
+# invalid age — out of range
+try:
+    p = PatientV9(name='Nitish', age=150)
+except ValidationError as e:
+    print("age=150 ->", e.errors()[0]['msg'])
+
+# invalid age — negative
+try:
+    p = PatientV9(name='Nitish', age=-5)
+except ValidationError as e:
+    print("age=-5  ->", e.errors()[0]['msg'])
+
+print()
+
+
+# ============================================================
 # SUMMARY — What we covered in pydantic3.py
 # ============================================================
 #
@@ -749,6 +830,8 @@ print()
 #                             writing a separate @field_validator
 # [OK] Annotated + metadata : title, description, examples — powers
 #                             FastAPI Swagger UI docs automatically
+# [OK] validator mode=before : runs BEFORE type coercion — clean raw input
+#      validator mode=after  : runs AFTER  type coercion — check typed value
 #
 # Next up -> pydantic4.py: model_config, strict mode,
 #            computed fields, and model_validator (multi-field rules)
