@@ -10,10 +10,11 @@
 #   5. Nested models       (a model inside another model)
 #   6. Special Pydantic types (EmailStr, AnyUrl — built-in smart validators)
 #   7. Field()  — add constraints like max_length, gt, lt directly in model
+#   8. Annotated + Field metadata  — title, description, examples for API docs
 # ============================================================
 
 from pydantic import BaseModel, ValidationError, field_validator, EmailStr, AnyUrl, Field
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Annotated
 
 
 # ============================================================
@@ -550,6 +551,182 @@ print()
 
 
 # ============================================================
+# STEP 8: Annotated + Field Metadata  —  Powering Your API Docs
+# ============================================================
+# In STEP 7 we used Field() for CONSTRAINTS (gt, lt, max_length).
+# Field() can ALSO carry METADATA — extra info about the field
+# that doesn't change validation, but makes your API docs beautiful.
+#
+# Metadata parameters inside Field():
+#
+#   title='...'       -> human-friendly name shown in Swagger UI
+#                        (default: Pydantic uses the field variable name)
+#
+#   description='...' -> longer explanation shown in Swagger UI
+#                        helps API consumers understand what the field means
+#
+#   examples=[...]    -> list of valid example values shown in Swagger UI
+#                        (previously 'example=...' in Pydantic v1)
+#
+# HOW TO ATTACH: Two styles — both work identically:
+#
+#   Style A: plain Field() on the right side
+#       name: str = Field(max_length=50, title='Name of the patient')
+#
+#   Style B: Annotated[]  (the modern, recommended way in Pydantic v2)
+#       name: Annotated[str, Field(max_length=50, title='Name of the patient')]
+#
+#   Annotated[TYPE, FIELD]  — you push the type AND its rules together
+#   into Annotated[].  This is cleaner when your Field() has many args.
+#
+# WHY DOES METADATA MATTER?
+#   When you use this model in FastAPI, FastAPI reads the model schema
+#   and automatically builds a /docs page (Swagger UI).
+#   title, description and examples show up directly in that UI —
+#   making your API self-documenting without writing any extra code.
+# ============================================================
+
+
+class PatientV8(BaseModel):
+
+    # Annotated[str, Field(...)]  — the modern Pydantic v2 style
+    #
+    # Breaking it down:
+    #   str                  — the actual Python type
+    #   Field(max_length=50) — constraint: name <= 50 characters
+    #   title=...            — metadata: what Swagger calls this field
+    #   description=...      — metadata: explains what to put here
+    #   examples=[...]       — metadata: sample values in Swagger UI
+    name: Annotated[
+        str,
+        Field(
+            max_length=50,
+            title='Name of the patient',
+            description='Give the name of the patient in less than 50 chars',
+            examples=['Nitish', 'Amit']
+        )
+    ]
+
+    # EmailStr already validates format.
+    # We add title + description so Swagger shows a helpful hint.
+    email: Annotated[
+        EmailStr,
+        Field(
+            title='Email address',
+            description='A valid email address for the patient',
+            examples=['patient@hospital.com']
+        )
+    ]
+
+    # AnyUrl already validates URL format.
+    # metadata here tells API consumers what kind of URL to provide.
+    linkedin_url: Annotated[
+        AnyUrl,
+        Field(
+            title='LinkedIn Profile URL',
+            description='Full LinkedIn URL including https://',
+            examples=['https://linkedin.com/in/nitish']
+        )
+    ]
+
+    # Constraints (gt, lt) AND metadata together in one Field().
+    # This is the real power of Annotated — one place for everything.
+    age: Annotated[
+        int,
+        Field(
+            gt=0,
+            lt=120,
+            title='Age',
+            description='Patient age in years, must be between 1 and 119',
+            examples=[25, 35, 60]
+        )
+    ]
+
+    weight: Annotated[
+        float,
+        Field(
+            gt=0,
+            title='Weight (kg)',
+            description='Body weight in kilograms',
+            examples=[55.5, 72.0, 90.2]
+        )
+    ]
+
+    married: bool = False  # simple default, no metadata needed
+
+    allergies: Annotated[
+        Optional[List[str]],
+        Field(
+            default=None,
+            max_length=5,
+            title='Known Allergies',
+            description='List of known allergens, maximum 5 entries',
+            examples=[['pollen', 'dust'], ['nuts']]
+        )
+    ]
+
+    contact_details: Annotated[
+        Dict[str, str],
+        Field(
+            title='Contact Details',
+            description='Key-value pairs like {"email": "...", "phone": "..."}',
+            examples=[{'phone': '9999999999', 'email': 'a@b.com'}]
+        )
+    ]
+
+
+print("=== STEP 8: Annotated + Field Metadata ===")
+
+# --- Create a valid patient using the metadata-rich model ---
+try:
+    p = PatientV8(
+        name='Nitish',
+        email='nitish@example.com',
+        linkedin_url='https://linkedin.com/in/nitish',
+        age=35,
+        weight=72.5,
+        allergies=['pollen'],
+        contact_details={'phone': '9999999999'}
+    )
+    print("Patient created successfully ->")
+    print("  name         :", p.name)
+    print("  email        :", p.email)
+    print("  linkedin_url :", p.linkedin_url)
+    print("  age          :", p.age)
+    print("  weight       :", p.weight)
+    print("  allergies    :", p.allergies)
+except ValidationError as e:
+    print(e)
+
+# The model schema now carries all the metadata.
+# Call .model_json_schema() to see it — this is exactly what FastAPI
+# sends to Swagger UI to generate the interactive API docs page.
+schema = PatientV8.model_json_schema()
+print("\nSchema 'name' field ->")
+print("  title      :", schema['properties']['name'].get('title'))
+print("  description:", schema['properties']['name'].get('description'))
+print("  examples   :", schema['properties']['name'].get('examples'))
+print("  maxLength  :", schema['properties']['name'].get('maxLength'))
+# All four appear in the schema — constraints + metadata in one place!
+
+# --- Constraints still work exactly as before ---
+try:
+    p = PatientV8(
+        name='A' * 51,   # exceeds max_length=50 — Field() still enforces this!
+        email='nitish@example.com',
+        linkedin_url='https://linkedin.com/in/nitish',
+        age=35,
+        weight=72.5,
+        contact_details={'phone': '9999999999'}
+    )
+except ValidationError as e:
+    print(f"\nConstraint still enforced -> {e.errors()[0]['msg']}")
+    # Metadata does NOT skip validation — both run together.
+
+print()
+
+
+# ============================================================
 # SUMMARY — What we covered in pydantic3.py
 # ============================================================
 #
@@ -570,6 +747,8 @@ print()
 # [OK] Special types        : EmailStr -> email, AnyUrl -> URL validation
 # [OK] Field() constraints  : max_length, gt, lt — inline rules without
 #                             writing a separate @field_validator
+# [OK] Annotated + metadata : title, description, examples — powers
+#                             FastAPI Swagger UI docs automatically
 #
 # Next up -> pydantic4.py: model_config, strict mode,
 #            computed fields, and model_validator (multi-field rules)
