@@ -38,7 +38,7 @@ class Patient(BaseModel):
     name: str
     gender: str
     age: int
-    address: Address    # Pydantic will validate this as an Address object
+    address: Address    # Pydantic will validate this as an Address object  // agar me address ko string me store karta and then mujhe state ya city fecth krna hota to dikkat hoti lekin jab  hum iseke anadar jab adress ka ek class bana de to usme se .adress.pin ya fer .state use r kr nikal sakte hai 
     email: EmailStr     # built-in email validator — no custom code needed
     linkedin: AnyUrl    # built-in URL validator  — no custom code needed
 
@@ -46,62 +46,21 @@ class Patient(BaseModel):
 print("=== Nested Models ===")
 
 # Pass address as a plain dict — Pydantic auto-converts it to Address
-try:
-    p = Patient(
-        name='Nitish', gender='male', age=35,
-        address={
-            'city': 'Gurgaon',
-            'state': 'Haryana',
-            'pin': '122002'         # dict gets converted to Address object
-        },
-        email='nitish@example.com',
-        linkedin='https://linkedin.com/in/nitish'
-    )
-    print("Valid patient ->", p.name, p.age)
-    print("  city  :", p.address.city)          # access nested fields
-    print("  state :", p.address.state)
-    print("  pin   :", p.address.pin)
-    print("  email :", p.email)
-    print("  linkedin:", p.linkedin)
-    print()
-    print("model_dump() ->", p.model_dump())    # address appears as nested dict
-except ValidationError as e:
-    print(e)
-
+p = Patient(
+    name='Nitish', gender='male', age=35,
+    address={
+        'city': 'Gurgaon',
+        'state': 'Haryana',
+        'pin': '122002'         # dict gets converted to Address object
+    },
+    email='nitish@example.com',
+    linkedin='https://linkedin.com/in/nitish'
+)
+print("Valid patient ->", p.name, p.age)
+print("  city  :", p.address.city)          # access nested fields
+print("  state :", p.address.state)
+print("  pin   :", p.address.pin)
+print("  email :", p.email)
+print("  linkedin:", p.linkedin)
 print()
-
-# --- What if the nested data is wrong? ---
-print("=== Invalid nested data ===")
-try:
-    p = Patient(
-        name='Nitish', gender='male', age=35,
-        address={
-            'city': 'Gurgaon',
-            'state': 'Haryana',
-            # pin is missing — it's a required field in Address
-        },
-        email='nitish@example.com',
-        linkedin='https://linkedin.com/in/nitish'
-    )
-except ValidationError as e:
-    print("Missing pin ->", e.errors()[0]['loc'], e.errors()[0]['msg'])
-
-try:
-    p = Patient(
-        name='Nitish', gender='male', age=35,
-        address={'city': 'Gurgaon', 'state': 'Haryana', 'pin': '122002'},
-        email='not-an-email',       # bad email format
-        linkedin='https://linkedin.com/in/nitish'
-    )
-except ValidationError as e:
-    print("Bad email   ->", e.errors()[0]['msg'])
-
-try:
-    p = Patient(
-        name='Nitish', gender='male', age=35,
-        address={'city': 'Gurgaon', 'state': 'Haryana', 'pin': '122002'},
-        email='nitish@example.com',
-        linkedin='linkedin.com'     # missing https:// scheme
-    )
-except ValidationError as e:
-    print("Bad URL     ->", e.errors()[0]['msg'])
+print("model_dump() ->", p.model_dump())    # address appears as nested dict
